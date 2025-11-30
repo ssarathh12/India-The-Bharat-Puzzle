@@ -14,6 +14,27 @@ html, body { height: 100%; margin: 0; padding: 0; font-family: 'Inter', sans-ser
 #map { height: 100%; width: 100%; border-radius: 0.75rem; }
 .leaflet-grab { cursor: grab; }
 .leaflet-dragging .leaflet-grab { cursor: grabbing; }
+
+/* --- NEW STYLES FOR WELCOME OVERLAY --- */
+
+/* Hide the main content until the user clicks start */
+#map, header {
+    visibility: hidden; 
+    opacity: 0; 
+    transition: opacity 0.5s;
+}
+
+/* Floating message animation keyframes */
+@keyframes float {
+    0% { transform: translateY(0); }
+    50% { transform: translateY(-8px); }
+    100% { transform: translateY(0); }
+}
+
+.floating-message {
+    animation: float 2.5s ease-in-out infinite;
+}
+
 </style>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
@@ -31,6 +52,19 @@ html, body { height: 100%; margin: 0; padding: 0; font-family: 'Inter', sans-ser
 </div>
 </header>
 
+<div id="welcome-overlay" class="fixed inset-0 z-50 flex items-center justify-center bg-gray-900 bg-opacity-95 transition-opacity duration-500">
+    <div class="bg-white p-8 sm:p-10 rounded-xl shadow-2xl max-w-lg text-center transform scale-100 transition-transform duration-500" id="welcome-box">
+        <h2 class="text-4xl font-extrabold text-indigo-700 mb-4 animate-pulse">
+            🇮🇳 India Geo-Puzzle
+        </h2>
+        <p class="text-xl text-gray-700 mb-6 font-semibold floating-message">
+            Welcome! Drag and drop the regions back into the map of India to complete the puzzle.
+        </p>
+        <button id="start-puzzle-btn" class="px-8 py-3 bg-green-600 text-white text-lg font-bold rounded-xl shadow-lg hover:bg-green-700 transition transform hover:scale-105">
+            Start Puzzle
+        </button>
+    </div>
+</div>
 <div id="map" class="flex-grow shadow-2xl"></div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -53,235 +87,230 @@ let gameState = { pieces: [], draggedPiece: null, score: 0 };
 // --- Initialize map with Carto Voyager basemap ---
 const map = L.map('map').setView([22.0, 78.0], 3);
 L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
-    attribution: '&copy; <a href="https://www.carto.com/">CARTO</a> &copy; OpenStreetMap contributors',
-    subdomains: 'abcd',
-    maxZoom: 19
+    attribution: '&copy; <a href="https://www.carto.com/">CARTO</a> &copy; OpenStreetMap contributors',
+    subdomains: 'abcd',
+    maxZoom: 19
 }).addTo(map);
 
 // --- Styles ---
-// Style for pieces that have not been snapped
-const geoJsonStyle = { color: "#ef4444", weight: 2, opacity: 0.8, fillColor: "#ef4444", fillOpacity: 0.5, className: "leaflet-grab" }; // red
-// Style for pieces that have been snapped
-const snappedStyle = { color: "#10b981", weight: 3, opacity: 1.0, fillColor: "#10b981", fillOpacity: 0.8 }; // green
+const geoJsonStyle = { color: "#ef4444", weight: 2, opacity: 0.8, fillColor: "#ef4444", fillOpacity: 0.5, className: "leaflet-grab" };
+const snappedStyle = { color: "#10b981", weight: 3, opacity: 1.0, fillColor: "#10b981", fillOpacity: 0.8 };
 
 // --- Core Helper Functions ---
-
-/**
- * Iterates through the coordinates of a GeoJSON layer and applies a differential offset.
- * Used for both dragging and snapping correction.
- * @param {L.GeoJSON} layer - The GeoJSON layer to move.
- * @param {number} latDiff - Latitude difference.
- * @param {number} lngDiff - Longitude difference.
- */
 function moveLayer(layer, latDiff, lngDiff) {
-    const latlngs = layer.getLatLngs();
-    const newLatLngs = latlngs.map(ringOrPolygon => {
-        const applyDiff = coords => {
-            if (coords.lat !== undefined && coords.lng !== undefined) return L.latLng(coords.lat + latDiff, coords.lng + lngDiff);
-            // Handles MultiPolygon/Polygon structure (array of rings/polygons)
-            return coords.map(applyDiff);
-        };
-        return applyDiff(ringOrPolygon);
-    });
-    layer.setLatLngs(newLatLngs);
+    const latlngs = layer.getLatLngs();
+    const newLatLngs = latlngs.map(ringOrPolygon => {
+        const applyDiff = coords => {
+            if (coords.lat !== undefined && coords.lng !== undefined) return L.latLng(coords.lat + latDiff, coords.lng + lngDiff);
+            return coords.map(applyDiff);
+        };
+        return applyDiff(ringOrPolygon);
+    });
+    layer.setLatLngs(newLatLngs);
 }
 
-// --- Drag Handlers ---
+// --- Drag Handlers (Kept the original working logic) ---
 function handleDragStart(e) {
-    const piece = e.target.piece;
-    if (piece.isSnapped) return; // Prevent dragging snapped pieces
-
-    // Bring the currently dragged piece to the front (Fix for overlapping)
-    piece.layer.bringToFront();
-
-    L.DomEvent.stop(e.originalEvent);
-    map.dragging.disable();
-    L.DomUtil.addClass(map.getContainer(), 'leaflet-dragging');
-    gameState.draggedPiece = piece;
-    piece.dragStartLatLng = e.latlng;
-
-    // Enhance drag appearance
-    piece.layer.setStyle({ opacity: 0.9, fillOpacity: 0.6, weight: 4 });
-
-    map.on('mousemove', handleDrag);
-    map.on('mouseup', handleDragEnd);
-    // Removed status message update during drag start
+    const piece = e.target.piece;
+    if (piece.isSnapped) return;
+    piece.layer.bringToFront();
+    L.DomEvent.stop(e.originalEvent);
+    map.dragging.disable();
+    L.DomUtil.addClass(map.getContainer(), 'leaflet-dragging');
+    gameState.draggedPiece = piece;
+    piece.dragStartLatLng = e.latlng;
+    piece.layer.setStyle({ opacity: 0.9, fillOpacity: 0.6, weight: 4 });
+    map.on('mousemove', handleDrag);
+    map.on('mouseup', handleDragEnd);
 }
 
 function handleDrag(e) {
-    const piece = gameState.draggedPiece;
-    if (!piece || !piece.dragStartLatLng) return;
-    const latDiff = e.latlng.lat - piece.dragStartLatLng.lat;
-    const lngDiff = e.latlng.lng - piece.dragStartLatLng.lng;
-    moveLayer(piece.layer, latDiff, lngDiff);
-    piece.dragStartLatLng = e.latlng;
+    const piece = gameState.draggedPiece;
+    if (!piece || !piece.dragStartLatLng) return;
+    const latDiff = e.latlng.lat - piece.dragStartLatLng.lat;
+    const lngDiff = e.latlng.lng - piece.dragStartLatLng.lng;
+    moveLayer(piece.layer, latDiff, lngDiff);
+    piece.dragStartLatLng = e.latlng;
 }
 
 function handleDragEnd() {
-    const piece = gameState.draggedPiece;
-    if (!piece) return;
-    map.dragging.enable();
-    L.DomUtil.removeClass(map.getContainer(), 'leaflet-dragging');
-    map.off('mousemove', handleDrag);
-    map.off('mouseup', handleDragEnd);
-
-    checkSnap(piece);
-
-    // Revert style if not snapped
-    if (!piece.isSnapped) {
-        piece.layer.setStyle(geoJsonStyle);
-    }
-    // Removed status message update for failed drag end
-    gameState.draggedPiece = null;
+    const piece = gameState.draggedPiece;
+    if (!piece) return;
+    map.dragging.enable();
+    L.DomUtil.removeClass(map.getContainer(), 'leaflet-dragging');
+    map.off('mousemove', handleDrag);
+    map.off('mouseup', handleDragEnd);
+    checkSnap(piece);
+    if (!piece.isSnapped) {
+        piece.layer.setStyle(geoJsonStyle);
+    }
+    gameState.draggedPiece = null;
 }
 
 function checkSnap(piece) {
-    const currentCenter = piece.layer.getBounds().getCenter();
-    const currentPixel = map.latLngToContainerPoint(currentCenter);
-    const targetPixel = map.latLngToContainerPoint(piece.targetCenter);
-    const pixelDistance = currentPixel.distanceTo(targetPixel);
+    const currentCenter = piece.layer.getBounds().getCenter();
+    const currentPixel = map.latLngToContainerPoint(currentCenter);
+    const targetPixel = map.latLngToContainerPoint(piece.targetCenter);
+    const pixelDistance = currentPixel.distanceTo(targetPixel);
 
-    if (pixelDistance <= SNAP_TOLERANCE_PIXELS) {
-        // Correction moves the piece to its original target center
-        const latCorrection = piece.targetCenter.lat - currentCenter.lat;
-        const lngCorrection = piece.targetCenter.lng - currentCenter.lng;
-        moveLayer(piece.layer, latCorrection, lngCorrection);
+    if (pixelDistance <= SNAP_TOLERANCE_PIXELS) {
+        const latCorrection = piece.targetCenter.lat - currentCenter.lat;
+        const lngCorrection = piece.targetCenter.lng - currentCenter.lng;
+        moveLayer(piece.layer, latCorrection, lngCorrection);
 
-        piece.isSnapped = true;
-        piece.layer.setStyle(snappedStyle);
+        piece.isSnapped = true;
+        piece.layer.setStyle(snappedStyle);
 
-        // Crucial: Remove drag cursor and event handler for snapped pieces (Fix for overlapping)
-        if (piece.layer._path) piece.layer._path.style.cursor = 'default';
-        piece.layer.off('mousedown', handleDragStart);
+        if (piece.layer._path) piece.layer._path.style.cursor = 'default';
+        piece.layer.off('mousedown', handleDragStart);
 
-        // Bring all other non-snapped pieces to front to prevent them from being stuck (Fix for overlapping)
-        gameState.pieces.forEach(p => {
-            if (!p.isSnapped) {
-                p.layer.bringToFront();
-            }
-        });
+        gameState.pieces.forEach(p => {
+            if (!p.isSnapped) {
+                p.layer.bringToFront();
+            }
+        });
 
-        gameState.score++;
-        document.getElementById('score').textContent = `${gameState.score} / ${TOTAL_PIECES}`;
-        
-        // RETAINED: Status message update for successful snap
-        document.getElementById('status-message').textContent = `SUCCESS! ${piece.name} snapped into place!`;
-        document.getElementById('status-message').className = 'text-green-600 font-bold';
-        if (gameState.score === TOTAL_PIECES) {
-            document.getElementById('status-message').textContent = "PUZZLE COMPLETE! All pieces are in place!";
-        }
-    } else {
-        // Removed status message update for failed snap
-    }
+        gameState.score++;
+        document.getElementById('score').textContent = `${gameState.score} / ${TOTAL_PIECES}`;
+        
+        document.getElementById('status-message').textContent = `SUCCESS! ${piece.name} snapped into place!`;
+        document.getElementById('status-message').className = 'text-green-600 font-bold';
+        if (gameState.score === TOTAL_PIECES) {
+            document.getElementById('status-message').textContent = "PUZZLE COMPLETE! All pieces are in place!";
+        }
+    }
 }
 
-/**
- * Places the layer randomly outside the main India boundary (West of 68 or East of 98).
- * @param {L.GeoJSON} layer - The GeoJSON layer to place.
- */
 function placeRandomlyOutsideIndia(layer) {
-    const bounds = layer.getBounds();
-    const currentCenter = bounds.getCenter();
-    let newCenterLat, newCenterLng;
+    const bounds = layer.getBounds();
+    const currentCenter = bounds.getCenter();
+    let newCenterLat, newCenterLng;
 
-    // Use a wider range of latitudes for better dispersal
-    const LAT_MIN = 8;
-    const LAT_MAX = 37;
+    const LAT_MIN = 8;
+    const LAT_MAX = 37;
 
-    if (Math.random() < 0.5) {
-        // Place West of 68° E (Pakistan/Arabian Sea)
-        newCenterLng = 60 + Math.random() * (67 - 60); // 60 to 67
-    } else {
-        // Place East of 98° E (SE Asia)
-        newCenterLng = 99 + Math.random() * (108 - 99); // 99 to 108
-    }
+    if (Math.random() < 0.5) {
+        newCenterLng = 60 + Math.random() * (67 - 60);
+    } else {
+        newCenterLng = 99 + Math.random() * (108 - 99);
+    }
 
-    // Random latitude within a reasonable range
-    newCenterLat = LAT_MIN + Math.random() * (LAT_MAX - LAT_MIN);
+    newCenterLat = LAT_MIN + Math.random() * (LAT_MAX - LAT_MIN);
 
-    const latCorrection = newCenterLat - currentCenter.lat;
-    const lngCorrection = newCenterLng - currentCenter.lng;
-    moveLayer(layer, latCorrection, lngCorrection);
+    const latCorrection = newCenterLat - currentCenter.lat;
+    const lngCorrection = newCenterLng - currentCenter.lng;
+    moveLayer(layer, latCorrection, lngCorrection);
 }
 
 
 // --- Main Load Function ---
 async function loadAndInitializePuzzle() {
-    const statusMessage = document.getElementById('status-message');
-    statusMessage.textContent = `Loading ${TOTAL_PIECES} GeoJSON files...`;
+    const statusMessage = document.getElementById('status-message');
+    statusMessage.textContent = `Loading ${TOTAL_PIECES} GeoJSON files...`;
 
-    const fetchPromises = STATE_FILENAMES.map(fileName =>
-        fetch(fileName)
-            .then(response => {
-                // Reminder: This must be run on a local web server (e.g., Live Server) to load GeoJSON files.
-                if (!response.ok) throw new Error(`Failed to load ${fileName}`);
-                return response.json();
-            })
-            .then(data => ({ name: fileName.replace(".geojson","").replace(/_/g,' '), data }))
-            .catch(err => { console.error("Error fetching file:", fileName, err); return null; })
-    );
+    const fetchPromises = STATE_FILENAMES.map(fileName =>
+        fetch(fileName)
+            .then(response => {
+                if (!response.ok) throw new Error(`Failed to load ${fileName}`);
+                return response.json();
+            })
+            .then(data => ({ name: fileName.replace(".geojson","").replace(/_/g,' '), data }))
+            .catch(err => { console.error("Error fetching file:", fileName, err); return null; })
+    );
 
-    const allGeoJsonData = (await Promise.all(fetchPromises)).filter(item => item !== null);
-    if (allGeoJsonData.length === 0) {
-        statusMessage.textContent = "FATAL ERROR: Could not load any GeoJSON data. Please ensure you are running this on a local web server.";
-        statusMessage.className = 'text-red-600 font-bold';
-        return;
-    }
+    const allGeoJsonData = (await Promise.all(fetchPromises)).filter(item => item !== null);
+    if (allGeoJsonData.length === 0) {
+        statusMessage.textContent = "FATAL ERROR: Could not load any GeoJSON data. Please ensure you are running this on a local web server.";
+        statusMessage.className = 'text-red-600 font-bold';
+        return;
+    }
 
-    document.getElementById('score').textContent = `0 / ${allGeoJsonData.length}`;
+    document.getElementById('score').textContent = `0 / ${allGeoJsonData.length}`;
 
-    allGeoJsonData.forEach(item => {
-        const stateName = item.name;
-        const originalGeoJsonData = item.data;
+    allGeoJsonData.forEach(item => {
+        const stateName = item.name;
+        const originalGeoJsonData = item.data;
 
-        // 1. Determine True Target Center (from original data)
-        const dummyLayer = L.geoJSON(originalGeoJsonData);
-        const targetCenter = dummyLayer.getBounds().getCenter();
-        dummyLayer.remove(); // Clean up the dummy layer
+        const dummyLayer = L.geoJSON(originalGeoJsonData);
+        const targetCenter = dummyLayer.getBounds().getCenter();
+        dummyLayer.remove();
 
-        // 2. Create the Leaflet Layer using ORIGINAL GeoJSON data (Fix for gaps)
-        const layer = L.geoJSON(originalGeoJsonData, {
-            style: geoJsonStyle,
-            onEachFeature: (feature, layer) => {
-                const piece = {
-                    name: stateName,
-                    layer,
-                    targetCenter, // Store the ORIGINAL center for snapping
-                    isSnapped: false,
-                    dragStartLatLng: null
-                };
-                layer.piece = piece;
-                layer.on('mousedown', handleDragStart);
+        const layer = L.geoJSON(originalGeoJsonData, {
+            style: geoJsonStyle,
+            onEachFeature: (feature, layer) => {
+                const piece = {
+                    name: stateName,
+                    layer,
+                    targetCenter,
+                    isSnapped: false,
+                    dragStartLatLng: null
+                };
+                layer.piece = piece;
+                layer.on('mousedown', handleDragStart);
 
-                // 3. Place piece outside India boundary
-                placeRandomlyOutsideIndia(layer);
+                placeRandomlyOutsideIndia(layer);
 
-                gameState.pieces.push(piece);
-            }
-        }).addTo(map);
-    });
+                gameState.pieces.push(piece);
+            }
+        }).addTo(map);
+    });
 
-    statusMessage.textContent = `Game loaded with ${allGeoJsonData.length} regions. Drag the pieces back to India!`;
-    statusMessage.className = 'text-indigo-700 font-medium';
+    statusMessage.textContent = `Game loaded with ${allGeoJsonData.length} regions. Drag the pieces back to India!`;
+    statusMessage.className = 'text-indigo-700 font-medium';
 }
 
 // --- Shuffle button ---
 document.getElementById('shuffle-btn').addEventListener('click', () => {
-    gameState.pieces.forEach(piece => {
-        if (!piece.isSnapped) {
-            placeRandomlyOutsideIndia(piece.layer);
-            piece.layer.setStyle(geoJsonStyle);
-            // Re-enable drag handlers and cursor for pieces that were previously moved but not snapped
-            piece.layer.on('mousedown', handleDragStart);
-            if (piece.layer._path) piece.layer._path.style.cursor = 'grab';
-            piece.layer.bringToFront(); // Bring all non-snapped pieces to front
-        }
-    });
-    document.getElementById('status-message').textContent = "Pieces shuffled to non-target regions!";
-    document.getElementById('status-message').className = 'text-indigo-700 font-medium';
+    gameState.pieces.forEach(piece => {
+        if (!piece.isSnapped) {
+            placeRandomlyOutsideIndia(piece.layer);
+            piece.layer.setStyle(geoJsonStyle);
+            piece.layer.on('mousedown', handleDragStart);
+            if (piece.layer._path) piece.layer._path.style.cursor = 'grab';
+            piece.layer.bringToFront();
+        }
+    });
+    document.getElementById('status-message').textContent = "Pieces shuffled to non-target regions!";
+    document.getElementById('status-message').className = 'text-indigo-700 font-medium';
 });
 
-loadAndInitializePuzzle();
+// --- NEW START BUTTON LOGIC ---
+document.addEventListener('DOMContentLoaded', () => {
+    const startButton = document.getElementById('start-puzzle-btn');
+    const welcomeOverlay = document.getElementById('welcome-overlay');
+    const header = document.querySelector('header');
+    const mapContainer = document.getElementById('map');
+    const welcomeBox = document.getElementById('welcome-box');
+
+    // Load data immediately in the background while the user sees the welcome screen
+    loadAndInitializePuzzle();
+
+    startButton.addEventListener('click', () => {
+        // 1. Animate the transition out
+        welcomeBox.style.transform = 'scale(1.1)';
+        welcomeBox.style.opacity = '0';
+        
+        // 2. Hide the overlay and show the game content
+        setTimeout(() => {
+            // Hide the overlay container
+            welcomeOverlay.style.opacity = '0';
+            setTimeout(() => {
+                welcomeOverlay.style.display = 'none';
+            }, 500); // Wait for opacity transition
+
+            // Reveal the header and map
+            header.style.visibility = 'visible';
+            header.style.opacity = '1';
+            mapContainer.style.visibility = 'visible';
+            mapContainer.style.opacity = '1';
+            
+            // 3. Force Leaflet to redraw itself once visible (CRITICAL STEP)
+            map.invalidateSize(); 
+
+        }, 300); // Wait for scale transition
+    });
+});
+
 </script>
 </body>
 
