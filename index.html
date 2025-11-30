@@ -15,24 +15,38 @@ html, body { height: 100%; margin: 0; padding: 0; font-family: 'Inter', sans-ser
 .leaflet-grab { cursor: grab; }
 .leaflet-dragging .leaflet-grab { cursor: grabbing; }
 
-/* --- NEW STYLES FOR WELCOME OVERLAY --- */
+/* --- CORE STYLES: HIDING GAME ELEMENTS INITIALLY --- */
 
-/* Hide the main content until the user clicks start */
+/* Use a class to manage visibility transition */
 #map, header {
-    visibility: hidden; 
-    opacity: 0; 
-    transition: opacity 0.5s;
+    opacity: 0; 
+    visibility: hidden; /* Hide immediately until transition starts */
+    pointer-events: none;
+    transition: opacity 0.5s ease-in-out;
+}
+
+/* Class added to body on 'Start Puzzle' click */
+.game-active #map,
+.game-active header {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
 }
 
 /* Floating message animation keyframes */
 @keyframes float {
-    0% { transform: translateY(0); }
-    50% { transform: translateY(-8px); }
-    100% { transform: translateY(0); }
+    0% { transform: translateY(0); }
+    50% { transform: translateY(-8px); }
+    100% { transform: translateY(0); }
 }
 
 .floating-message {
-    animation: float 2.5s ease-in-out infinite;
+    animation: float 2.5s ease-in-out infinite;
+}
+
+/* Style to hide the overlay after animation */
+#welcome-overlay.hidden-overlay {
+    display: none; /* Hard hide after transition */
 }
 
 </style>
@@ -48,22 +62,25 @@ html, body { height: 100%; margin: 0; padding: 0; font-family: 'Inter', sans-ser
 </div>
 <div class="flex items-center mt-2 sm:mt-0">
 <p class="text-sm text-gray-600 mr-4" id="status-message">Initializing game data...</p>
+
+<p class="text-xl font-bold text-red-600 mr-4" id="timer-display">00:00</p>
+
 <button id="shuffle-btn" class="px-4 py-2 bg-indigo-600 text-white rounded-lg shadow hover:bg-indigo-700 transition">Shuffle Pieces</button>
 </div>
 </header>
 
 <div id="welcome-overlay" class="fixed inset-0 z-50 flex items-center justify-center bg-gray-900 bg-opacity-95 transition-opacity duration-500">
-    <div class="bg-white p-8 sm:p-10 rounded-xl shadow-2xl max-w-lg text-center transform scale-100 transition-transform duration-500" id="welcome-box">
-        <h2 class="text-4xl font-extrabold text-indigo-700 mb-4 animate-pulse">
-            🇮🇳 India Geo-Puzzle
-        </h2>
-        <p class="text-xl text-gray-700 mb-6 font-semibold floating-message">
-            Welcome! Drag and drop the regions back into the map of India to complete the puzzle.
-        </p>
-        <button id="start-puzzle-btn" class="px-8 py-3 bg-green-600 text-white text-lg font-bold rounded-xl shadow-lg hover:bg-green-700 transition transform hover:scale-105">
-            Start Puzzle
-        </button>
-    </div>
+    <div class="bg-white p-8 sm:p-10 rounded-xl shadow-2xl max-w-lg text-center transform scale-100 transition-transform duration-500" id="welcome-box">
+        <h2 class="text-4xl font-extrabold text-indigo-700 mb-4 animate-pulse">
+            🇮🇳 India Geo-Puzzle
+        </h2>
+        <p class="text-xl text-gray-700 mb-6 font-semibold floating-message">
+            Welcome! Drag and drop the regions back into the map of India to complete the puzzle.
+        </p>
+        <button id="start-puzzle-btn" class="px-8 py-3 bg-green-600 text-white text-lg font-bold rounded-xl shadow-lg hover:bg-green-700 transition transform hover:scale-105">
+            Start Puzzle
+        </button>
+    </div>
 </div>
 <div id="map" class="flex-grow shadow-2xl"></div>
 
@@ -83,6 +100,33 @@ const STATE_FILENAMES = ['ANDAMAN_and_NICOBAR.geojson', 'ANDHRA_PRADESH.geojson'
 const TOTAL_PIECES = STATE_FILENAMES.length;
 const SNAP_TOLERANCE_PIXELS = 20;
 let gameState = { pieces: [], draggedPiece: null, score: 0 };
+
+// --- TIMER VARIABLES ---
+let timerInterval;
+let timeElapsed = 0;
+const timerDisplay = document.getElementById('timer-display');
+
+// --- Timer Functions ---
+function formatTime(seconds) {
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = seconds % 60;
+    const minStr = String(minutes).padStart(2, '0');
+    const secStr = String(remainingSeconds).padStart(2, '0');
+    return `${minStr}:${secStr}`;
+}
+
+function startTimer() {
+    timeElapsed = 0;
+    clearInterval(timerInterval);
+    timerInterval = setInterval(() => {
+        timeElapsed++;
+        timerDisplay.textContent = formatTime(timeElapsed);
+    }, 1000);
+}
+
+function stopTimer() {
+    clearInterval(timerInterval);
+}
 
 // --- Initialize map with Carto Voyager basemap ---
 const map = L.map('map').setView([22.0, 78.0], 3);
@@ -109,7 +153,7 @@ function moveLayer(layer, latDiff, lngDiff) {
     layer.setLatLngs(newLatLngs);
 }
 
-// --- Drag Handlers (Kept the original working logic) ---
+// --- Drag Handlers (Unchanged) ---
 function handleDragStart(e) {
     const piece = e.target.piece;
     if (piece.isSnapped) return;
@@ -175,8 +219,12 @@ function checkSnap(piece) {
         
         document.getElementById('status-message').textContent = `SUCCESS! ${piece.name} snapped into place!`;
         document.getElementById('status-message').className = 'text-green-600 font-bold';
+        
+        // --- TIMER STOP LOGIC ---
         if (gameState.score === TOTAL_PIECES) {
-            document.getElementById('status-message').textContent = "PUZZLE COMPLETE! All pieces are in place!";
+            stopTimer(); // Stop the timer when the last piece is snapped!
+            document.getElementById('status-message').textContent = `PUZZLE COMPLETE! Final Time: ${formatTime(timeElapsed)}`;
+            document.getElementById('status-message').className = 'text-green-800 font-extrabold';
         }
     }
 }
@@ -261,6 +309,9 @@ async function loadAndInitializePuzzle() {
 
 // --- Shuffle button ---
 document.getElementById('shuffle-btn').addEventListener('click', () => {
+    // Prevent shuffling if the puzzle is already complete
+    if (gameState.score === TOTAL_PIECES) return; 
+
     gameState.pieces.forEach(piece => {
         if (!piece.isSnapped) {
             placeRandomlyOutsideIndia(piece.layer);
@@ -274,40 +325,36 @@ document.getElementById('shuffle-btn').addEventListener('click', () => {
     document.getElementById('status-message').className = 'text-indigo-700 font-medium';
 });
 
-// --- NEW START BUTTON LOGIC ---
+// --- START BUTTON LOGIC (FIXED FOR NO FLASHING & TIMER START) ---
 document.addEventListener('DOMContentLoaded', () => {
     const startButton = document.getElementById('start-puzzle-btn');
     const welcomeOverlay = document.getElementById('welcome-overlay');
-    const header = document.querySelector('header');
-    const mapContainer = document.getElementById('map');
+    const body = document.body;
     const welcomeBox = document.getElementById('welcome-box');
 
     // Load data immediately in the background while the user sees the welcome screen
     loadAndInitializePuzzle();
 
     startButton.addEventListener('click', () => {
-        // 1. Animate the transition out
+        // 1. Start the Timer right when the user clicks
+        startTimer();
+
+        // 2. Animate the welcome box out
         welcomeBox.style.transform = 'scale(1.1)';
         welcomeBox.style.opacity = '0';
         
-        // 2. Hide the overlay and show the game content
-        setTimeout(() => {
-            // Hide the overlay container
-            welcomeOverlay.style.opacity = '0';
-            setTimeout(() => {
-                welcomeOverlay.style.display = 'none';
-            }, 500); // Wait for opacity transition
+        // 3. Simultaneously trigger the game elements to fade in
+        // This relies on the CSS transition in the <style> block
+        body.classList.add('game-active');
 
-            // Reveal the header and map
-            header.style.visibility = 'visible';
-            header.style.opacity = '1';
-            mapContainer.style.visibility = 'visible';
-            mapContainer.style.opacity = '1';
+        // 4. Hide the overlay completely after the transition time (500ms for opacity)
+        setTimeout(() => {
+            welcomeOverlay.classList.add('hidden-overlay');
             
-            // 3. Force Leaflet to redraw itself once visible (CRITICAL STEP)
+            // 5. Force Leaflet to redraw itself once visible (CRITICAL STEP)
             map.invalidateSize(); 
 
-        }, 300); // Wait for scale transition
+        }, 500); // 500ms matches the CSS transition duration
     });
 });
 
